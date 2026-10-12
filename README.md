@@ -77,11 +77,12 @@ Owner (React dashboard) ──WS + REST────┘
 ### Backend package layout (by feature, not by type)
 ```
 com.livechat
+├── common/exception/ ResourceNotFoundException, BadRequestException
 ├── config/          WebSocketConfig, SecurityConfig, CorsConfig
 ├── auth/            AuthController, AuthService, JwtService, JwtAuthFilter, dto/
 ├── user/            User, UserRepository
-├── site/            Site, SiteRepository, SiteService, SiteController
-├── conversation/    Conversation, ConversationStatus, ConversationRepository, ConversationService, ConversationController
+├── site/            Site, SiteRepository, SiteService, SiteController, dto/
+├── conversation/    Conversation, ConversationStatus, ConversationRepository, ConversationService, ConversationController, dto/
 ├── message/         Message, SenderType, MessageRepository, MessageService
 └── chat/            ChatController, WebSocketAuthInterceptor, NotificationService, dto/
 ```
@@ -129,6 +130,7 @@ Rules:
 - A `ChannelInterceptor` (`WebSocketAuthInterceptor`) validates credentials on `CONNECT` and authorizes `SUBSCRIBE`.
 - A visitor can subscribe **only to their own conversation topic**, never to others.
 - An owner can subscribe only to conversations of **their own Sites**.
+- The JWT is checked on CONNECT only (an expired token on an already open connection is not re-checked yet).
 - CORS / allowed origins must allow the shop websites to load the widget and connect to `/ws`.
 
 ---
@@ -139,30 +141,30 @@ Rules:
 - **Application prefix (client -> server):** `/app`
 - **Broker prefix (server -> client):** `/topic`
 
+### Authentication (CONNECT headers)
+- **Owner:** `Authorization: Bearer <jwt>`
+- **Visitor:** `siteKey` and `visitorId` native headers
+
+### Subscriptions & Permissions
+- `/topic/chat/{conversationId}`:
+  - **Owner:** Allowed only if the conversation belongs to a site owned by the authenticated owner.
+  - **Visitor:** Allowed only if the conversation belongs to the visitor's `visitorId` and `siteId`.
+- `/topic/site/{siteId}/notifications`:
+  - **Owner:** Allowed only if the site belongs to the authenticated owner.
+  - **Visitor:** Always rejected.
+- Any other destination is rejected.
+
+### Sending Messages
+- Clients may SEND only to `/app/chat/{conversationId}` (sending directly to `/topic/**` is strictly rejected).
+- The SEND payload is `{ "content": "..." }` (`senderType` is derived by the server from the STOMP session).
+
 | Direction | Destination | Purpose |
 |---|---|---|
 | Client sends | `/app/chat/{conversationId}` | Send a message (`@MessageMapping("/chat/{conversationId}")`) |
 | Client subscribes | `/topic/chat/{conversationId}` | Receive messages of one conversation (`@SendTo`) |
 | Owner subscribes | `/topic/site/{siteId}/notifications` | Receive "new conversation" / "new message" alerts |
 
-Core handler idea:
-
-```java
-@Controller
-public class ChatController {
-
-    @MessageMapping("/chat/{conversationId}")
-    @SendTo("/topic/chat/{conversationId}")
-    public ChatMessage send(@DestinationVariable Long conversationId, ChatMessage msg) {
-        // 1. validate sender (visitor via siteKey/visitorId, or owner via JWT)
-        // 2. save Message in database
-        // 3. return it -> broadcast to subscribers
-        return msg;
-    }
-}
-```
-
-Message payload (`ChatMessage`): `{ conversationId, senderType, content, createdAt }`
+Message payload (`ChatMessage` broadcast and history): `{ conversationId, senderType, content, createdAt }`
 
 ---
 
@@ -177,6 +179,7 @@ Message payload (`ChatMessage`): `{ conversationId, senderType, content, created
 | GET | `/api/conversations?siteId=` | JWT | List conversations of one of my sites |
 | GET | `/api/conversations/{id}/messages` | JWT | Message history |
 | POST | `/api/widget/conversations` | siteKey | Visitor starts or resumes a conversation (by `visitorId`) |
+| GET | `/api/widget/conversations/{id}/messages?visitorId=` | public (visitorId) | Visitor message history |
 
 ---
 
@@ -259,8 +262,15 @@ cd dashboard && npm install && npm run dev
 ## 12. Current status
 
 - [ ] Step 1: basic in-memory chat
-- [ ] Step 2: database + messages (entities and repositories)
+- [x] Step 2: database + messages (entities and repositories)
+- [x] Step 3A: DTOs and services (done)
+- [x] Step 3B/3C: WebSocket, notifications, test pages (temporary, no auth)
 - [ ] Step 3: sites and conversations
+- [x] Step 4A: REST authentication
+- [x] Step 4B: WebSocket security
 - [ ] Step 4: authentication
 - [ ] Step 5: dashboard
 - [ ] Step 6: widget
+
+### Temporary code to remove
+- test pages

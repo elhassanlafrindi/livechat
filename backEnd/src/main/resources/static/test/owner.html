@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Owner Dashboard Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+</head>
+<body>
+    <h2>Owner LiveChat Test</h2>
+
+    <!-- Auth Section -->
+    <fieldset>
+        <legend>Authentication</legend>
+        <label>Email: </label>
+        <input type="email" id="emailInput" value="owner@test.com" />
+        <label>Password: </label>
+        <input type="password" id="passwordInput" value="password123" />
+        <button id="registerBtn">Register</button>
+        <button id="loginBtn">Login</button>
+        <span id="authStatus" style="margin-left: 10px; font-weight: bold;"></span>
+    </fieldset>
+
+    <!-- Sites Section -->
+    <fieldset style="margin-top: 10px;">
+        <legend>Sites</legend>
+        <label>Site Name: </label>
+        <input type="text" id="siteNameInput" placeholder="My Shop" />
+        <button id="createSiteBtn">Create site</button>
+        <button id="loadSitesBtn">Refresh Sites</button>
+        <div style="margin-top: 5px;">
+            <label>Select Site: </label>
+            <select id="sitesSelect"></select>
+            <button id="loadConversationsBtn">Load Conversations & Connect STOMP</button>
+        </div>
+    </fieldset>
+
+    <div id="notificationAlert" style="margin-top: 10px; color: red; font-weight: bold;"></div>
+    <div id="errorBox" style="margin-top: 5px; color: darkred; font-weight: bold;"></div>
+
+    <hr/>
+
+    <div style="display: flex; gap: 20px;">
+        <div style="width: 300px;">
+            <h3>Conversations</h3>
+            <ul id="conversationsList"></ul>
+        </div>
+        <div style="flex-grow: 1;">
+            <h3>Active Conversation: <span id="activeConvSpan">None</span></h3>
+            <ul id="messagesList"></ul>
+            <div>
+                <input type="text" id="messageInput" placeholder="Type a message..." disabled />
+                <button id="sendBtn" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let token = null;
+        let currentUserId = null;
+        let selectedSiteId = null;
+        let stompClient = null;
+        let activeConvId = null;
+        let activeChatSubscription = null;
+        let siteNotificationsSub = null;
+
+        function getAuthHeaders() {
+            const headers = { "Content-Type": "application/json" };
+            if (token) {
+                headers["Authorization"] = `Bearer ${token}`;
+            }
+            return headers;
+        }
+
+        async function register() {
+            const email = document.getElementById("emailInput").value.trim();
+            const password = document.getElementById("passwordInput").value;
+            document.getElementById("errorBox").textContent = "";
+            try {
+                const res = await fetch("/auth/register", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert("Register failed: " + (data.message || res.statusText));
+                    return;
+                }
+                token = data.token;
+                currentUserId = data.userId;
+                document.getElementById("authStatus").textContent = `Logged in as ${data.email} (ID: ${data.userId})`;
+                loadSites();
+            } catch (err) {
+                alert("Register error: " + err.message);
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById("emailInput").value.trim();
+            const password = document.getElementById("passwordInput").value;
+            document.getElementById("errorBox").textContent = "";
+            try {
+                const res = await fetch("/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert("Login failed: " + (data.message || res.statusText));
+                    return;
+                }
+                token = data.token;
+                currentUserId = data.userId;
+                document.getElementById("authStatus").textContent = `Logged in as ${data.email} (ID: ${data.userId})`;
+                loadSites();
+            } catch (err) {
+                alert("Login error: " + err.message);
+            }
+        }
+
+        async function createSite() {
+            if (!token) {
+                alert("Please login first");
+                return;
+            }
+            const name = document.getElementById("siteNameInput").value.trim();
+            if (!name) {
+                alert("Enter site name");
+                return;
+            }
+            try {
+                const res = await fetch("/api/sites", {
+                    method: "POST",
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ name, allowedDomain: null })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert("Create site failed: " + (data.message || res.statusText));
+                    return;
+                }
+                alert(`Site created! siteId: ${data.id}, siteKey: ${data.siteKey}`);
+                loadSites();
+            } catch (err) {
+                alert("Create site error: " + err.message);
+            }
+        }
+
+        async function loadSites() {
+            if (!token) return;
+            try {
+                const res = await fetch("/api/sites", {
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) {
+                    alert("Load sites failed");
+                    return;
+                }
+                const sites = await res.json();
+                const select = document.getElementById("sitesSelect");
+                select.innerHTML = "";
+                sites.forEach(s => {
+                    const opt = document.createElement("option");
+                    opt.value = s.id;
+                    opt.textContent = `${s.name} (ID: ${s.id}, Key: ${s.siteKey})`;
+                    select.appendChild(opt);
+                });
+                if (sites.length > 0) {
+                    selectedSiteId = sites[0].id;
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function addMessage(senderType, content) {
+            const list = document.getElementById("messagesList");
+            const li = document.createElement("li");
+            li.textContent = `[${senderType}]: ${content}`;
+            list.appendChild(li);
+        }
+
+        async function loadConversations() {
+            const select = document.getElementById("sitesSelect");
+            selectedSiteId = select.value;
+            if (!selectedSiteId) {
+                alert("Please select a site first");
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/conversations?siteId=${selectedSiteId}`, {
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert("Error: " + (err.message || res.statusText));
+                    return;
+                }
+                const convs = await res.json();
+                const list = document.getElementById("conversationsList");
+                list.innerHTML = "";
+                convs.forEach(c => {
+                    const li = document.createElement("li");
+                    const link = document.createElement("a");
+                    link.href = "#";
+                    link.textContent = `Conv #${c.id} (Visitor: ${c.visitorId})`;
+                    link.onclick = (e) => {
+                        e.preventDefault();
+                        selectConversation(c.id);
+                    };
+                    li.appendChild(link);
+                    list.appendChild(li);
+                });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function selectConversation(convId) {
+            activeConvId = convId;
+            document.getElementById("activeConvSpan").textContent = `#${convId}`;
+            document.getElementById("messageInput").disabled = false;
+            document.getElementById("sendBtn").disabled = false;
+
+            // Load history
+            document.getElementById("messagesList").innerHTML = "";
+            const res = await fetch(`/api/conversations/${convId}/messages`, {
+                headers: getAuthHeaders()
+            });
+            if (res.ok) {
+                const history = await res.json();
+                history.forEach(m => addMessage(m.senderType, m.content));
+            }
+
+            // Unsubscribe previous conversation topic if subscribed
+            if (activeChatSubscription) {
+                activeChatSubscription.unsubscribe();
+                activeChatSubscription = null;
+            }
+
+            // Subscribe to this conversation's topic
+            if (stompClient && stompClient.connected) {
+                activeChatSubscription = stompClient.subscribe(`/topic/chat/${convId}`, (msg) => {
+                    const chatMsg = JSON.parse(msg.body);
+                    addMessage(chatMsg.senderType, chatMsg.content);
+                });
+            }
+        }
+
+        function initStomp() {
+            if (!selectedSiteId) return;
+            if (!token) {
+                alert("Please login first to connect STOMP");
+                return;
+            }
+            if (stompClient) {
+                stompClient.deactivate();
+            }
+
+            document.getElementById("errorBox").textContent = "";
+
+            stompClient = new StompJs.Client({
+                webSocketFactory: () => new SockJS('/ws'),
+                connectHeaders: {
+                    Authorization: 'Bearer ' + token
+                },
+                onConnect: () => {
+                    siteNotificationsSub = stompClient.subscribe(`/topic/site/${selectedSiteId}/notifications`, (notification) => {
+                        const notif = JSON.parse(notification.body);
+                        const alertDiv = document.getElementById("notificationAlert");
+                        alertDiv.textContent = `[NOTIFICATION ${notif.type}] Conv #${notif.conversationId}: ${notif.preview || 'New conversation'}`;
+                        loadConversations();
+                    });
+
+                    if (activeConvId) {
+                        selectConversation(activeConvId);
+                    }
+                },
+                onStompError: (frame) => {
+                    const errMsg = frame.headers['message'] || 'STOMP error';
+                    console.error('Broker reported error: ' + errMsg);
+                    document.getElementById("errorBox").textContent = "STOMP Error: " + errMsg;
+                },
+                onWebSocketClose: (evt) => {
+                    console.warn('WebSocket closed', evt);
+                }
+            });
+
+            stompClient.activate();
+        }
+
+        async function onLoadConversationsClick() {
+            await loadConversations();
+            initStomp();
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("messageInput");
+            const content = input.value.trim();
+            if (!content || !stompClient || !activeConvId) return;
+
+            stompClient.publish({
+                destination: `/app/chat/${activeConvId}`,
+                body: JSON.stringify({ content: content })
+            });
+            input.value = "";
+        }
+
+        document.getElementById("registerBtn").addEventListener("click", register);
+        document.getElementById("loginBtn").addEventListener("click", login);
+        document.getElementById("createSiteBtn").addEventListener("click", createSite);
+        document.getElementById("loadSitesBtn").addEventListener("click", loadSites);
+        document.getElementById("loadConversationsBtn").addEventListener("click", onLoadConversationsClick);
+        document.getElementById("sendBtn").addEventListener("click", sendMessage);
+        document.getElementById("messageInput").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") sendMessage();
+        });
+    </script>
+</body>
+</html>
