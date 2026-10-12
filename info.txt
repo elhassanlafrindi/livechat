@@ -1,0 +1,199 @@
+============================================================================================
+LIVECHAT PROJECT - QUESTIONS & EXPLANATIONS
+============================================================================================
+
+--------------------------------------------------------------------------------------------
+Q1: Why do we need /topic/site/{id}/notifications and when do we subscribe to it?
+--------------------------------------------------------------------------------------------
+
+WHY WE NEED IT:
+  A shop owner cannot watch every single chat thread individually at the same time.
+  While a shop is running, anonymous visitors are constantly visiting and might start
+  conversations at any moment.
+
+  The /topic/site/{id}/notifications channel acts like a site-wide doorbell or inbox alert:
+    - When a visitor starts a brand-new chat      -> a notification arrives.
+    - When a visitor sends a message while the
+      owner is looking elsewhere                  -> a notification arrives.
+
+  This allows the dashboard to show a red badge, play a sound, and instantly refresh
+  the conversation inbox list.
+
+WHEN TO SUBSCRIBE:
+  The owner subscribes to this channel as soon as they log into the dashboard and select
+  their shop. It remains active in the background the entire time the dashboard is open.
+
+
+--------------------------------------------------------------------------------------------
+Q2: Does the owner subscribe to /topic/chat/{id} too?
+--------------------------------------------------------------------------------------------
+
+YES, but only when actively viewing a specific conversation.
+
+  - The notification channel (/topic/site/{id}/notifications) only tells the owner:
+    "Hey, conversation #5 has a new message!"
+
+  - To actually read and send real-time messages line-by-line in conversation #5,
+    the owner opens that chat thread and subscribes to /topic/chat/5.
+
+  - When the owner clicks on a different conversation (e.g., conversation #8),
+    they unsubscribe from #5 and subscribe to #8.
+
+
+--------------------------------------------------------------------------------------------
+Q3: @MessageMapping("/chat/{conversationId}") + @SendTo("/topic/chat/{conversationId}")
+    Does this mean we receive in /chat/{conversationId} then the broker sends
+    to /topic/chat/{conversationId}?
+--------------------------------------------------------------------------------------------
+
+YES, that is exactly how it works. The flow has 3 steps:
+
+  STEP 1 - Client sends to the controller:
+    A client sends a message to /app/chat/5.
+    The /app prefix tells Spring: "Do not broadcast this yet — route this to my
+    Java application logic first."
+
+  STEP 2 - Controller processes the message:
+    The method annotated with @MessageMapping("/chat/5") executes:
+      - It identifies who sent the message (owner or visitor).
+      - It validates the text length and content.
+      - It persists the message into the PostgreSQL database.
+      - If the sender is a visitor, it triggers the owner notification alert.
+
+  STEP 3 - Broker broadcasts to subscribers:
+    The @SendTo("/topic/chat/5") annotation takes the saved message returned by the method
+    and forwards it to the broker. The broker immediately pushes a copy to everyone
+    listening on /topic/chat/5 (the visitor AND the owner).
+
+  SUMMARY OF FLOW:
+    Client  --[/app/chat/5]--> Controller (validates + saves to DB)
+                                     |
+                                     v
+                              Broker broadcasts
+                                     |
+                                     v
+                      Everyone subscribed to /topic/chat/5
+
+
+--------------------------------------------------------------------------------------------
+Q4: Why does WebSocketAuthInterceptor implement ChannelInterceptor?
+--------------------------------------------------------------------------------------------
+
+PROBLEM WITH STANDARD HTTP SECURITY:
+  In standard REST APIs, every single HTTP request brings an Authorization header,
+  and standard web filters can block unauthorized URLs easily.
+
+  WebSocket connections work very differently:
+    1. The HTTP handshake only opens the pipe: Once the connection is established,
+       standard HTTP filters are no longer involved.
+    2. All actions happen inside the pipe: Clients send STOMP text commands
+       (CONNECT, SUBSCRIBE, SEND) continuously through that single open connection.
+
+WITHOUT THE INTERCEPTOR - what would be possible:
+  - A visitor could guess another visitor's conversation ID and subscribe to read
+    their private chat.
+  - An owner could subscribe to a competitor's shop notifications.
+  - A user could spoof their identity (e.g., a visitor claiming to be the owner).
+  - A user could send directly to /topic/... bypassing the controller and preventing
+    messages from being saved to the database.
+
+WHAT THE INTERCEPTOR DOES:
+  It acts as a firewall / bouncer for every frame inside the WebSocket pipe:
+
+  - On CONNECT:
+      Inspects the credentials (verifies the JWT token for an owner, or the site key
+      for a visitor) and attaches their verified identity to the connection.
+
+  - On SUBSCRIBE:
+      Verifies tenant isolation:
+        - Visitors can only listen to their OWN conversation.
+        - Owners can only listen to their OWN shops.
+
+  - On SEND:
+      Forces all messages to pass through /app/... controllers and prevents clients
+      from forging who they are.
+
+
+--------------------------------------------------------------------------------------------
+Q5: What is the role of WidgetController?
+--------------------------------------------------------------------------------------------
+
+WidgetController is the dedicated, PUBLIC gateway for website visitors.
+
+WHY WE NEED IT:
+  - Shop owners have accounts, passwords, and JWT tokens to access the /api/... endpoints.
+  - Visitors browsing a shop website are ANONYMOUS shoppers. They do not have accounts
+    or login credentials.
+  - Because visitors cannot use JWT tokens, they cannot use the standard owner endpoints
+    (such as ConversationController).
+
+WHAT IT IS RESPONSIBLE FOR:
+
+  1. Starting or resuming a conversation (POST /api/widget/conversations):
+       - When a visitor opens the chat bubble on a shop website, the widget sends the
+         public siteKey and the visitor's local visitorId.
+       - The controller finds the shop, restores an existing conversation or creates a new one,
+         and notifies the shop owner if it is new.
+
+  2. Loading message history for visitors (GET /api/widget/conversations/{id}/messages):
+       - Allows visitors to load their previous messages by verifying that the requested
+         conversation belongs to their specific visitorId.
+
+  3. Open Access (CORS):
+       - Unlike owner endpoints that only allow requests from the owner dashboard,
+         the widget controller allows requests from ANY external shop website where
+         the script is embedded.
+
+
+--------------------------------------------------------------------------------------------
+Q6: What is the role of WsSession?
+--------------------------------------------------------------------------------------------
+
+WsSession is a CONTRACT / DICTIONARY of identity keys attached to a WebSocket connection.
+
+WHY WE NEED IT:
+  - In a WebSocket connection, the client authenticates only once (during the CONNECT frame).
+  - After authentication, the connection stays open. Every time the client sends a message
+    or subscribes to a topic, the server needs to know:
+    "Who does this open connection belong to? An owner or a visitor?
+    Which user ID or site ID?"
+  - Spring allows storing data in a temporary memory bag called SESSION ATTRIBUTES
+    attached to that connection.
+
+WHAT IT IS RESPONSIBLE FOR:
+  It defines the standard keys and types stored in that memory bag,
+  eliminating hardcoded "magic strings" and typo risks across the application:
+
+    - "type"      -> Whether the caller is an "OWNER" or a "VISITOR"
+    - "userId"    -> The database ID of the owner (if logged in)
+    - "siteId"    -> The shop ID (if a visitor)
+    - "visitorId" -> The visitor's browser identifier (if a visitor)
+
+WHO USES IT:
+  - WebSocketAuthInterceptor: WRITES these values into the session when the client connects.
+  - ChatController:           READS these values when a message arrives so the server
+                              can decide whether the sender is OWNER or VISITOR
+                              without trusting the client.
+
+
+--------------------------------------------------------------------------------------------
+ARCHITECTURE OVERVIEW (Brief Summary)
+--------------------------------------------------------------------------------------------
+
+WHO            | CONNECTS VIA          | IDENTITY VERIFIED BY
+---------------|-----------------------|---------------------------------------------------
+Owner          | JWT Bearer token      | WebSocketAuthInterceptor on STOMP CONNECT
+Visitor        | siteKey + visitorId   | WebSocketAuthInterceptor on STOMP CONNECT
+
+WHO            | SUBSCRIBES TO                         | CAN ALSO SUBSCRIBE TO
+---------------|---------------------------------------|----------------------------------
+Owner          | /topic/site/{siteId}/notifications    | /topic/chat/{convId} (active conv)
+Visitor        | /topic/chat/{convId}                  | Nothing else (notifications: NO)
+
+SEND FLOW:
+  Client  ->  /app/chat/{id}  ->  ChatController (saves to DB, derives sender type)
+                                        |
+                                        v
+                              /topic/chat/{id}  ->  All subscribers (owner + visitor)
+
+============================================================================================

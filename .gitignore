@@ -1,0 +1,62 @@
+# ============================
+# Environment & Secrets
+# ============================
+.env
+.env.local
+.env.*.local
+
+# ============================
+# Documentation & Notes
+# ============================
+info.txt
+
+# ============================
+# IDE - IntelliJ IDEA
+# ============================
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# ============================
+# IDE - VS Code
+# ============================
+.vscode/
+
+# ============================
+# IDE - Eclipse / STS
+# ============================
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# ============================
+# Java / Maven (backend)
+# ============================
+backEnd/target/
+backEnd/.mvn/wrapper/maven-wrapper.jar
+backEnd/HELP.md
+
+# ============================
+# Node / Frontend (dashboard)
+# ============================
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+
+# ============================
+# OS generated files
+# ============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================
+# Logs
+# ============================
+*.log
+logs/

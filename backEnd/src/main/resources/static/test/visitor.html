@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Visitor Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+</head>
+<body>
+    <h2>Visitor LiveChat Test</h2>
+    <div>
+        <label>Site Key: </label>
+        <input type="text" id="siteKeyInput" placeholder="Enter siteKey" />
+        <button id="connectBtn">Connect</button>
+    </div>
+    <div style="margin-top: 10px;">
+        <p>Visitor ID: <span id="visitorIdSpan"></span></p>
+        <p>Conversation ID: <span id="convIdSpan">-</span></p>
+        <p>Status: <span id="statusSpan">Disconnected</span></p>
+    </div>
+
+    <div id="errorBox" style="color: red; font-weight: bold; margin-top: 5px;"></div>
+
+    <hr/>
+
+    <div>
+        <h3>Chat Messages</h3>
+        <ul id="messagesList"></ul>
+    </div>
+
+    <div>
+        <input type="text" id="messageInput" placeholder="Type a message..." disabled />
+        <button id="sendBtn" disabled>Send</button>
+    </div>
+
+    <script>
+        let visitorId = localStorage.getItem("visitorId");
+        if (!visitorId) {
+            visitorId = crypto.randomUUID();
+            localStorage.setItem("visitorId", visitorId);
+        }
+        document.getElementById("visitorIdSpan").textContent = visitorId;
+
+        let stompClient = null;
+        let currentConversationId = null;
+
+        function addMessage(senderType, content) {
+            const list = document.getElementById("messagesList");
+            const li = document.createElement("li");
+            li.textContent = `[${senderType}]: ${content}`;
+            list.appendChild(li);
+        }
+
+        async function connect() {
+            const siteKey = document.getElementById("siteKeyInput").value.trim();
+            if (!siteKey) {
+                alert("Please enter a siteKey");
+                return;
+            }
+            document.getElementById("errorBox").textContent = "";
+
+            try {
+                // 1. Start or resume conversation
+                const startRes = await fetch("/api/widget/conversations", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ siteKey, visitorId })
+                });
+                if (!startRes.ok) {
+                    const err = await startRes.json();
+                    alert("Error: " + (err.message || startRes.statusText));
+                    return;
+                }
+                const conv = await startRes.json();
+                currentConversationId = conv.id;
+                document.getElementById("convIdSpan").textContent = currentConversationId;
+
+                // 2. Fetch history
+                document.getElementById("messagesList").innerHTML = "";
+                const historyRes = await fetch(`/api/widget/conversations/${currentConversationId}/messages?visitorId=${encodeURIComponent(visitorId)}`);
+                if (historyRes.ok) {
+                    const history = await historyRes.json();
+                    history.forEach(m => addMessage(m.senderType, m.content));
+                }
+
+                // 3. Connect STOMP with siteKey & visitorId headers
+                if (stompClient) {
+                    stompClient.deactivate();
+                }
+
+                stompClient = new StompJs.Client({
+                    webSocketFactory: () => new SockJS('/ws'),
+                    connectHeaders: {
+                        siteKey: siteKey,
+                        visitorId: visitorId
+                    },
+                    onConnect: () => {
+                        document.getElementById("statusSpan").textContent = "Connected";
+                        document.getElementById("errorBox").textContent = "";
+                        document.getElementById("messageInput").disabled = false;
+                        document.getElementById("sendBtn").disabled = false;
+
+                        stompClient.subscribe(`/topic/chat/${currentConversationId}`, (message) => {
+                            const chatMsg = JSON.parse(message.body);
+                            addMessage(chatMsg.senderType, chatMsg.content);
+                        });
+                    },
+                    onStompError: (frame) => {
+                        const errMsg = frame.headers['message'] || 'STOMP error';
+                        console.error('Broker reported error: ' + errMsg);
+                        document.getElementById("statusSpan").textContent = "Error";
+                        document.getElementById("errorBox").textContent = "STOMP Error: " + errMsg;
+                    },
+                    onWebSocketClose: (evt) => {
+                        console.warn('WebSocket closed', evt);
+                        document.getElementById("statusSpan").textContent = "Disconnected / Closed";
+                    }
+                });
+
+                stompClient.activate();
+            } catch (err) {
+                console.error(err);
+                alert("Failed to connect: " + err.message);
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("messageInput");
+            const content = input.value.trim();
+            if (!content || !stompClient || !currentConversationId) return;
+
+            stompClient.publish({
+                destination: `/app/chat/${currentConversationId}`,
+                body: JSON.stringify({ content: content })
+            });
+            input.value = "";
+        }
+
+        document.getElementById("connectBtn").addEventListener("click", connect);
+        document.getElementById("sendBtn").addEventListener("click", sendMessage);
+        document.getElementById("messageInput").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") sendMessage();
+        });
+    </script>
+</body>
+</html>
