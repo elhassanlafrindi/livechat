@@ -36,8 +36,9 @@ public class WidgetController {
     }
 
     @GetMapping("/conversations/{id}/messages")
-    public List<ChatMessage> getMessages(@PathVariable Long id, @RequestParam String visitorId) {
-        conversationService.getByIdAndVisitorId(id, visitorId);
+    public List<ChatMessage> getMessages(@PathVariable Long id, @RequestParam String visitorId,
+                                        @RequestParam String siteKey) {
+        conversationService.getByIdAndVisitorIdAndSiteKey(id, visitorId, siteKey);
         return messageService.getHistory(id);
     }
 }

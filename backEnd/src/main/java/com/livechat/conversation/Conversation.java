@@ -7,7 +7,10 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "conversations", indexes = @Index(name = "idx_conversation_visitor", columnList = "visitorId"))
+@Table(name = "conversations",
+        indexes = @Index(name = "idx_conversation_visitor", columnList = "visitor_id"),
+        uniqueConstraints = @UniqueConstraint(name = "uk_conversation_site_visitor",
+                columnNames = {"site_id", "visitor_id"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -23,7 +26,7 @@ public class Conversation {
     @JoinColumn(name = "site_id", nullable = false)
     private Site site;
 
-    @Column(nullable = false)
+    @Column(name = "visitor_id", nullable = false, length = 64)
     private String visitorId;
 
     @Enumerated(EnumType.STRING)

@@ -13,7 +13,7 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
 
     Optional<Conversation> findByIdAndSiteOwnerId(Long id, Long ownerId);
 
-    Optional<Conversation> findByIdAndVisitorId(Long id, String visitorId);
+    Optional<Conversation> findByIdAndVisitorIdAndSiteSiteKey(Long id, String visitorId, String siteKey);
 
     boolean existsByIdAndSiteOwnerId(Long id, Long ownerId);
 

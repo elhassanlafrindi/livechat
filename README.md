@@ -25,7 +25,7 @@ There are only two kinds of people. **There is no agent and no role system**: th
    <script src="https://yourapp.com/widget.js" data-site-key="abc123"></script>
    ```
 3. The **widget** (our JS, running inside the shop's page) shows a chat bubble.
-4. A visitor sends a message -> a **Conversation** is created -> the owner gets a live notification in the dashboard.
+4. A visitor opens the chat -> `POST /api/widget/conversations` creates a **Conversation** before the first message -> the owner gets a live notification in the dashboard at that moment.
 5. The owner replies in real time. All messages are saved in the database.
 6. The owner can read the history later.
 
@@ -52,8 +52,8 @@ There are only two kinds of people. **There is no agent and no role system**: th
 
 ```
 livechat-saas/
-├── backend/        Spring Boot (REST API + WebSocket/STOMP)
-├── dashboard/      React + Vite (owner interface)
+├── backEnd/        Spring Boot (REST API + WebSocket/STOMP)
+├── dashboard/      React + Vite + TypeScript, strict (owner interface)
 ├── widget/         Plain JavaScript (embeddable chat, NO framework)
 ├── demo-shop/      Fake shop website to test the widget
 └── docker-compose.yml   PostgreSQL
@@ -69,8 +69,8 @@ Owner (React dashboard) ──WS + REST────┘
 - The widget has **no framework** on purpose: it runs inside other people's sites and must stay small and conflict-free.
 
 ### Tech stack
-- **Backend:** Java 21, Spring Boot 3, Spring Web, Spring WebSocket (STOMP), Spring Security (JWT), Spring Data JPA, PostgreSQL, Lombok
-- **Dashboard:** React, Vite (plain HTML/JS is acceptable for the first version)
+- **Backend:** Java 21, Spring Boot 4.1.1, Spring Web, Spring WebSocket (STOMP), Spring Security (JWT), Spring Data JPA, PostgreSQL, Lombok
+- **Dashboard:** React, Vite, TypeScript (strict, never `any`)
 - **Widget:** vanilla JS, `stomp.js` / SockJS
 - **Infra:** Docker Compose (PostgreSQL)
 
@@ -107,7 +107,7 @@ Enums (stored with `@Enumerated(EnumType.STRING)`):
 - `SenderType`: `VISITOR`, `OWNER`
 
 Notes:
-- `Site.siteKey` is a public random string. `Site.allowedDomain` lets the server reject a widget loaded from another website that copied the key.
+- `Site.siteKey` is a public random string. `Site.allowedDomain` is stored and validated as a bare hostname; enforcement comes in Step 7.
 - `Conversation.visitorId` is the ID stored in the visitor's `localStorage`.
 - `Conversation.lastMessageAt` is used to sort the owner's inbox.
 - `Message.senderType = OWNER` always means the owner of the conversation's Site.
@@ -179,7 +179,7 @@ Message payload (`ChatMessage` broadcast and history): `{ conversationId, sender
 | GET | `/api/conversations?siteId=` | JWT | List conversations of one of my sites |
 | GET | `/api/conversations/{id}/messages` | JWT | Message history |
 | POST | `/api/widget/conversations` | siteKey | Visitor starts or resumes a conversation (by `visitorId`) |
-| GET | `/api/widget/conversations/{id}/messages?visitorId=` | public (visitorId) | Visitor message history |
+| GET | `/api/widget/conversations/{id}/messages?visitorId=...&siteKey=...` | public (visitorId + siteKey, both required) | Visitor message history scoped by Site |
 
 ---
 
@@ -242,11 +242,19 @@ services:
 ```
 
 Run:
-```bash
+```powershell
 docker compose up -d          # start PostgreSQL
-cd backend && ./mvnw spring-boot:run
-cd dashboard && npm install && npm run dev
+cd .\backEnd
+.\mvnw.cmd spring-boot:run
+
+# In another terminal, from the project root:
+cd .\dashboard
+npm install
+if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
+npm run dev
 ```
+
+The dashboard uses React + Vite + TypeScript in strict mode, runs at `http://localhost:5173`, and reads `VITE_API_URL=http://localhost:8080` from `dashboard/.env.local` (ignored by Git).
 
 ---
 
@@ -261,15 +269,18 @@ cd dashboard && npm install && npm run dev
 
 ## 12. Current status
 
-- [ ] Step 1: basic in-memory chat
+- [x] Step 1: basic in-memory chat
 - [x] Step 2: database + messages (entities and repositories)
+- [x] Step 3: sites and conversations
 - [x] Step 3A: DTOs and services (done)
-- [x] Step 3B/3C: WebSocket, notifications, test pages (temporary, no auth)
-- [ ] Step 3: sites and conversations
+- [x] Step 3B/3C: WebSocket, notifications, test pages (temporary, using JWT and authenticated STOMP connections)
+- [x] Step 4: authentication and validation
 - [x] Step 4A: REST authentication
 - [x] Step 4B: WebSocket security
-- [ ] Step 4: authentication
+- [x] Step 4C: visitor history scoped by Site, duplicate-conversation prevention, input validation, configuration cleanup, README synchronization
 - [ ] Step 5: dashboard
+- [x] Step 5A: dashboard foundation (typed API client, authentication, sites page)
+- [x] Step 5B: dashboard inbox
 - [ ] Step 6: widget
 
 ### Temporary code to remove
