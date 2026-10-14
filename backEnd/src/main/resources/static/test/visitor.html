@@ -77,7 +77,7 @@
 
                 // 2. Fetch history
                 document.getElementById("messagesList").innerHTML = "";
-                const historyRes = await fetch(`/api/widget/conversations/${currentConversationId}/messages?visitorId=${encodeURIComponent(visitorId)}`);
+                const historyRes = await fetch(`/api/widget/conversations/${currentConversationId}/messages?visitorId=${encodeURIComponent(visitorId)}&siteKey=${encodeURIComponent(siteKey)}`);
                 if (historyRes.ok) {
                     const history = await historyRes.json();
                     history.forEach(m => addMessage(m.senderType, m.content));

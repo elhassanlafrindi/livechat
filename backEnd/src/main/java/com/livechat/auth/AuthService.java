@@ -12,6 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 @Service
@@ -33,8 +35,14 @@ public class AuthService {
         if (request.password() == null || request.password().length() < 8) {
             throw new BadRequestException("Password must be at least 8 characters");
         }
+        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new BadRequestException("Password too long");
+        }
 
-        String normalizedEmail = request.email().trim().toLowerCase();
+        String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+        if (normalizedEmail.length() > 254) {
+            throw new BadRequestException("Email must not exceed 254 characters");
+        }
         if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BadRequestException("Email already used");
         }
@@ -57,7 +65,10 @@ public class AuthService {
             throw new UnauthorizedException("Invalid credentials");
         }
 
-        String normalizedEmail = request.email().trim().toLowerCase();
+        String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+        if (normalizedEmail.length() > 254) {
+            throw new BadRequestException("Email must not exceed 254 characters");
+        }
         User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
