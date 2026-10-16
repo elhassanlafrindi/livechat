@@ -281,7 +281,31 @@ The dashboard uses React + Vite + TypeScript in strict mode, runs at `http://loc
 - [ ] Step 5: dashboard
 - [x] Step 5A: dashboard foundation (typed API client, authentication, sites page)
 - [x] Step 5B: dashboard inbox
-- [ ] Step 6: widget
+- [x] Step 6: widget
 
 ### Temporary code to remove
 - test pages
+
+## Embedding the widget
+
+Add this script to your shop page, replacing the URL and site key with your own:
+
+```html
+<script src="http://localhost:8080/widget.js" data-site-key="YOUR_SITE_KEY"
+        data-color="#2563eb" data-title="Chat with us"
+        data-greeting="Hi! How can we help you?"></script>
+```
+
+`data-site-key` is required. Optional attributes are `data-color` (a valid hex color, default `#2563eb`), `data-title` (default `Chat with us`), and `data-greeting` (default `Hi! How can we help you?`). The widget uses the script URL's origin as its API base and contacts the server only when the chat is first opened.
+
+Build from the project root:
+
+```powershell
+cd .\widget
+npm install
+npm run build
+```
+
+The build writes `widget/dist/widget.js` and copies it to `backEnd/src/main/resources/static/widget.js`. Start the backend with `cd .\backEnd` and `.\mvnw.cmd spring-boot:run` from the project root.
+
+For the demo, replace `PASTE_SITE_KEY_HERE` in `demo-shop/index.html` with a key from the dashboard. From the project root, run `npx serve demo-shop -l 5500` and open `http://localhost:5500`.
