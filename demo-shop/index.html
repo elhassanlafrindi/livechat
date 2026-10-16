@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Corner Shop</title>
+    <style>
+      * { box-sizing: content-box; }
+      button { background: red; color: white; padding: 12px 18px; border: 0; font: inherit; cursor: pointer; }
+      body { margin: 0; background: #faf8f4; color: #2d3430; font: 16px/1.6 Georgia, serif; }
+      header { padding: 24px 8%; border-bottom: 1px solid #dedbd2; font: bold 22px Arial, sans-serif; }
+      main { max-width: 1050px; padding: 48px 24px; margin: auto; }
+      h1 { font-size: clamp(32px, 5vw, 52px); line-height: 1.15; margin-bottom: 18px; }
+      .intro { max-width: 600px; color: #616861; margin-bottom: 40px; }
+      .products { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; }
+      article { padding: 20px; background: white; border: 1px solid #dedbd2; border-radius: 8px; }
+      .product { height: 150px; display: grid; place-items: center; background: #edece4; font-size: 26px; }
+      h2 { font-size: 22px; margin-bottom: 8px; }
+      .price { font-family: Arial, sans-serif; font-weight: bold; }
+      footer { padding: 30px 24px; text-align: center; color: #616861; }
+    </style>
+  </head>
+  <body>
+    <header>The Corner Shop</header>
+    <main>
+      <h1>Simple things for every day.</h1>
+      <p class="intro">A small collection of everyday essentials. Have a question about a product? Open the chat bubble and ask us.</p>
+      <div class="products">
+        <article><div class="product">Notebook</div><h2>Daily notebook</h2><p>A place for your plans and ideas.</p><p class="price">$12</p><button type="button">View product</button></article>
+        <article><div class="product">Mug</div><h2>Everyday mug</h2><p>Your morning coffee, made cozy.</p><p class="price">$18</p><button type="button">View product</button></article>
+        <article><div class="product">Tote</div><h2>Canvas tote</h2><p>A simple bag for all your essentials.</p><p class="price">$24</p><button type="button">View product</button></article>
+      </div>
+    </main>
+    <footer>Demo store · The Corner Shop</footer>
+    <script src="http://localhost:8080/widget.js" data-site-key="sk_I3zBUoB5kfsPikqK1S8RYXrD"></script>
+  </body>
+</html>

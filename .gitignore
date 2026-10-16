@@ -48,6 +48,10 @@ dashboard/node_modules/
 dashboard/dist/
 dashboard/.vite/
 
+# Widget build files (the backend static copy stays tracked)
+widget/node_modules/
+widget/dist/
+
 # ============================
 # OS generated files
 # ============================
